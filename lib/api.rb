@@ -20,6 +20,10 @@ class Api < Rubiclifier::BaseApi
   end
 
   def self.invalid_credentials_error
+    Rubiclifier::Notification.new(
+      "Incorrect Credentials",
+      "Trying running `better_gerrit_home --setup` again."
+    ).send
     sleep(120)
     exit
   end

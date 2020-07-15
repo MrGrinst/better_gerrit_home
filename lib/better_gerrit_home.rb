@@ -5,14 +5,20 @@ require_relative "./server.rb"
 class BetterGerritHome < Rubiclifier::BaseApplication
   def show_help
     puts
-    puts("DESCRIPTION")
+    puts("Host a better version of Gerrit's home page.")
+    puts("  Access it at http://localhost:5541")
     puts
     puts("Usage:")
     puts("  better_gerrit_home --help                      | Shows this help menu")
     puts("  better_gerrit_home --setup                     | Runs setup")
-    puts("  better_gerrit_home command --option <argument> | Executes command")
     puts
     exit
+  end
+
+  def post_setup_message
+    puts
+    puts("The server is starting up!".green)
+    puts("  Access it at http://localhost:5541")
   end
 
   def server_class
@@ -20,7 +26,7 @@ class BetterGerritHome < Rubiclifier::BaseApplication
   end
 
   def features
-    [Rubiclifier::Feature::DATABASE, Rubiclifier::Feature::SERVER]
+    [Rubiclifier::Feature::BACKGROUND, Rubiclifier::Feature::DATABASE, Rubiclifier::Feature::NOTIFICATIONS, Rubiclifier::Feature::SERVER]
   end
 
   def settings
@@ -34,9 +40,5 @@ class BetterGerritHome < Rubiclifier::BaseApplication
 
   def data_directory
     "~/.better_gerrit_home"
-  end
-
-  def migrations_location
-    "#{File.expand_path(File.dirname(__FILE__) + "/..")}/migrations.rb"
   end
 end
