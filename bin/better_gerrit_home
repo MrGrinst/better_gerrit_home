@@ -1,0 +1,5 @@
+#!/usr/bin/env ruby
+
+require_relative "../lib/better_gerrit_home.rb"
+
+BetterGerritHome.new(ARGV, __FILE__.split("/").last).call
