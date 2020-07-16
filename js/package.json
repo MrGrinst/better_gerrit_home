@@ -16,6 +16,7 @@
     "svelte": "^3.0.0"
   },
   "dependencies": {
+    "ifvisible.js": "^1.0.6",
     "moment": "^2.27.0"
   }
 }
