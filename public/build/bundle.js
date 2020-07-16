@@ -34,12 +34,6 @@ var app = (function () {
     function detach(node) {
         node.parentNode.removeChild(node);
     }
-    function destroy_each(iterations, detaching) {
-        for (let i = 0; i < iterations.length; i += 1) {
-            if (iterations[i])
-                iterations[i].d(detaching);
-        }
-    }
     function element(name) {
         return document.createElement(name);
     }
@@ -150,6 +144,96 @@ var app = (function () {
         if (block && block.i) {
             outroing.delete(block);
             block.i(local);
+        }
+    }
+
+    function destroy_block(block, lookup) {
+        block.d(1);
+        lookup.delete(block.key);
+    }
+    function update_keyed_each(old_blocks, dirty, get_key, dynamic, ctx, list, lookup, node, destroy, create_each_block, next, get_context) {
+        let o = old_blocks.length;
+        let n = list.length;
+        let i = o;
+        const old_indexes = {};
+        while (i--)
+            old_indexes[old_blocks[i].key] = i;
+        const new_blocks = [];
+        const new_lookup = new Map();
+        const deltas = new Map();
+        i = n;
+        while (i--) {
+            const child_ctx = get_context(ctx, list, i);
+            const key = get_key(child_ctx);
+            let block = lookup.get(key);
+            if (!block) {
+                block = create_each_block(key, child_ctx);
+                block.c();
+            }
+            else if (dynamic) {
+                block.p(child_ctx, dirty);
+            }
+            new_lookup.set(key, new_blocks[i] = block);
+            if (key in old_indexes)
+                deltas.set(key, Math.abs(i - old_indexes[key]));
+        }
+        const will_move = new Set();
+        const did_move = new Set();
+        function insert(block) {
+            transition_in(block, 1);
+            block.m(node, next);
+            lookup.set(block.key, block);
+            next = block.first;
+            n--;
+        }
+        while (o && n) {
+            const new_block = new_blocks[n - 1];
+            const old_block = old_blocks[o - 1];
+            const new_key = new_block.key;
+            const old_key = old_block.key;
+            if (new_block === old_block) {
+                // do nothing
+                next = new_block.first;
+                o--;
+                n--;
+            }
+            else if (!new_lookup.has(old_key)) {
+                // remove old block
+                destroy(old_block, lookup);
+                o--;
+            }
+            else if (!lookup.has(new_key) || will_move.has(new_key)) {
+                insert(new_block);
+            }
+            else if (did_move.has(old_key)) {
+                o--;
+            }
+            else if (deltas.get(new_key) > deltas.get(old_key)) {
+                did_move.add(new_key);
+                insert(new_block);
+            }
+            else {
+                will_move.add(old_key);
+                o--;
+            }
+        }
+        while (o--) {
+            const old_block = old_blocks[o];
+            if (!new_lookup.has(old_block.key))
+                destroy(old_block, lookup);
+        }
+        while (n)
+            insert(new_blocks[n - 1]);
+        return new_blocks;
+    }
+    function validate_each_keys(ctx, list, get_context, get_key) {
+        const keys = new Set();
+        for (let i = 0; i < list.length; i++) {
+            const key = get_key(get_context(ctx, list, i));
+            if (keys.has(key)) {
+                throw new Error(`Cannot have duplicate keys in a keyed each`);
+            }
+            keys.add(key);
         }
     }
     function mount_component(component, target, anchor) {
@@ -6006,24 +6090,357 @@ var app = (function () {
     })));
     });
 
+    var ifvisible = createCommonjsModule(function (module, exports) {
+    (function() {
+      (function(root, factory) {
+        {
+          return module.exports = factory();
+        }
+      })(this, function() {
+        var addEvent, customEvent, doc, hidden, idleStartedTime, idleTime, ie, ifvisible, init, initialized, status, trackIdleStatus, visibilityChange;
+        ifvisible = {};
+        doc = document;
+        initialized = false;
+        status = "active";
+        idleTime = 60000;
+        idleStartedTime = false;
+        customEvent = (function() {
+          var addCustomEvent, cgid, fireCustomEvent, listeners, removeCustomEvent;
+          listeners = {};
+          cgid = '__ceGUID';
+          addCustomEvent = function(obj, event, callback) {
+            obj[cgid] = undefined;
+            if (!obj[cgid]) {
+              obj[cgid] = "ifvisible.object.event.identifier";
+            }
+            if (!listeners[obj[cgid]]) {
+              listeners[obj[cgid]] = {};
+            }
+            if (!listeners[obj[cgid]][event]) {
+              listeners[obj[cgid]][event] = [];
+            }
+            return listeners[obj[cgid]][event].push(callback);
+          };
+          fireCustomEvent = function(obj, event, memo) {
+            var ev, j, len, ref, results;
+            if (obj[cgid] && listeners[obj[cgid]] && listeners[obj[cgid]][event]) {
+              ref = listeners[obj[cgid]][event];
+              results = [];
+              for (j = 0, len = ref.length; j < len; j++) {
+                ev = ref[j];
+                results.push(ev(memo || {}));
+              }
+              return results;
+            }
+          };
+          removeCustomEvent = function(obj, event, callback) {
+            var cl, i, j, len, ref;
+            if (callback) {
+              if (obj[cgid] && listeners[obj[cgid]] && listeners[obj[cgid]][event]) {
+                ref = listeners[obj[cgid]][event];
+                for (i = j = 0, len = ref.length; j < len; i = ++j) {
+                  cl = ref[i];
+                  if (cl === callback) {
+                    listeners[obj[cgid]][event].splice(i, 1);
+                    return cl;
+                  }
+                }
+              }
+            } else {
+              if (obj[cgid] && listeners[obj[cgid]] && listeners[obj[cgid]][event]) {
+                return delete listeners[obj[cgid]][event];
+              }
+            }
+          };
+          return {
+            add: addCustomEvent,
+            remove: removeCustomEvent,
+            fire: fireCustomEvent
+          };
+        })();
+        addEvent = (function() {
+          var setListener;
+          setListener = false;
+          return function(el, ev, fn) {
+            if (!setListener) {
+              if (el.addEventListener) {
+                setListener = function(el, ev, fn) {
+                  return el.addEventListener(ev, fn, false);
+                };
+              } else if (el.attachEvent) {
+                setListener = function(el, ev, fn) {
+                  return el.attachEvent('on' + ev, fn, false);
+                };
+              } else {
+                setListener = function(el, ev, fn) {
+                  return el['on' + ev] = fn;
+                };
+              }
+            }
+            return setListener(el, ev, fn);
+          };
+        })();
+        ie = (function() {
+          var all, check, div, undef, v;
+          undef = void 0;
+          v = 3;
+          div = doc.createElement("div");
+          all = div.getElementsByTagName("i");
+          check = function() {
+            return (div.innerHTML = "<!--[if gt IE " + (++v) + "]><i></i><![endif]-->", all[0]);
+          };
+          while (check()) {
+            continue;
+          }
+          if (v > 4) {
+            return v;
+          } else {
+            return undef;
+          }
+        })();
+        hidden = false;
+        visibilityChange = void 0;
+        if (typeof doc.hidden !== "undefined") {
+          hidden = "hidden";
+          visibilityChange = "visibilitychange";
+        } else if (typeof doc.mozHidden !== "undefined") {
+          hidden = "mozHidden";
+          visibilityChange = "mozvisibilitychange";
+        } else if (typeof doc.msHidden !== "undefined") {
+          hidden = "msHidden";
+          visibilityChange = "msvisibilitychange";
+        } else if (typeof doc.webkitHidden !== "undefined") {
+          hidden = "webkitHidden";
+          visibilityChange = "webkitvisibilitychange";
+        }
+        trackIdleStatus = function() {
+          var timer, wakeUp;
+          timer = false;
+          wakeUp = function() {
+            clearTimeout(timer);
+            if (status !== "active") {
+              ifvisible.wakeup();
+            }
+            idleStartedTime = +(new Date());
+            return timer = setTimeout(function() {
+              if (status === "active") {
+                return ifvisible.idle();
+              }
+            }, idleTime);
+          };
+          wakeUp();
+          addEvent(doc, "mousemove", wakeUp);
+          addEvent(doc, "keyup", wakeUp);
+          addEvent(doc, "touchstart", wakeUp);
+          addEvent(window, "scroll", wakeUp);
+          ifvisible.focus(wakeUp);
+          return ifvisible.wakeup(wakeUp);
+        };
+        init = function() {
+          var blur;
+          if (initialized) {
+            return true;
+          }
+          if (hidden === false) {
+            blur = "blur";
+            if (ie < 9) {
+              blur = "focusout";
+            }
+            addEvent(window, blur, function() {
+              return ifvisible.blur();
+            });
+            addEvent(window, "focus", function() {
+              return ifvisible.focus();
+            });
+          } else {
+            addEvent(doc, visibilityChange, function() {
+              if (doc[hidden]) {
+                return ifvisible.blur();
+              } else {
+                return ifvisible.focus();
+              }
+            }, false);
+          }
+          initialized = true;
+          return trackIdleStatus();
+        };
+        ifvisible = {
+          setIdleDuration: function(seconds) {
+            return idleTime = seconds * 1000;
+          },
+          getIdleDuration: function() {
+            return idleTime;
+          },
+          getIdleInfo: function() {
+            var now, res;
+            now = +(new Date());
+            res = {};
+            if (status === "idle") {
+              res.isIdle = true;
+              res.idleFor = now - idleStartedTime;
+              res.timeLeft = 0;
+              res.timeLeftPer = 100;
+            } else {
+              res.isIdle = false;
+              res.idleFor = now - idleStartedTime;
+              res.timeLeft = (idleStartedTime + idleTime) - now;
+              res.timeLeftPer = (100 - (res.timeLeft * 100 / idleTime)).toFixed(2);
+            }
+            return res;
+          },
+          focus: function(callback) {
+            if (typeof callback === "function") {
+              this.on("focus", callback);
+            } else {
+              status = "active";
+              customEvent.fire(this, "focus");
+              customEvent.fire(this, "wakeup");
+              customEvent.fire(this, "statusChanged", {
+                status: status
+              });
+            }
+            return this;
+          },
+          blur: function(callback) {
+            if (typeof callback === "function") {
+              this.on("blur", callback);
+            } else {
+              status = "hidden";
+              customEvent.fire(this, "blur");
+              customEvent.fire(this, "idle");
+              customEvent.fire(this, "statusChanged", {
+                status: status
+              });
+            }
+            return this;
+          },
+          idle: function(callback) {
+            if (typeof callback === "function") {
+              this.on("idle", callback);
+            } else {
+              status = "idle";
+              customEvent.fire(this, "idle");
+              customEvent.fire(this, "statusChanged", {
+                status: status
+              });
+            }
+            return this;
+          },
+          wakeup: function(callback) {
+            if (typeof callback === "function") {
+              this.on("wakeup", callback);
+            } else {
+              status = "active";
+              customEvent.fire(this, "wakeup");
+              customEvent.fire(this, "statusChanged", {
+                status: status
+              });
+            }
+            return this;
+          },
+          on: function(name, callback) {
+            init();
+            customEvent.add(this, name, callback);
+            return this;
+          },
+          off: function(name, callback) {
+            init();
+            customEvent.remove(this, name, callback);
+            return this;
+          },
+          onEvery: function(seconds, callback) {
+            var paused, t;
+            init();
+            paused = false;
+            if (callback) {
+              t = setInterval(function() {
+                if (status === "active" && paused === false) {
+                  return callback();
+                }
+              }, seconds * 1000);
+            }
+            return {
+              stop: function() {
+                return clearInterval(t);
+              },
+              pause: function() {
+                return paused = true;
+              },
+              resume: function() {
+                return paused = false;
+              },
+              code: t,
+              callback: callback
+            };
+          },
+          now: function(check) {
+            init();
+            return status === (check || "active");
+          }
+        };
+        return ifvisible;
+      });
+
+    }).call(commonjsGlobal);
+
+
+    });
+
     /* src/App.svelte generated by Svelte v3.24.0 */
     const file = "src/App.svelte";
 
     function get_each_context_1(ctx, list, i) {
     	const child_ctx = ctx.slice();
-    	child_ctx[4] = list[i];
+    	child_ctx[9] = list[i];
     	return child_ctx;
     }
 
     function get_each_context(ctx, list, i) {
     	const child_ctx = ctx.slice();
-    	child_ctx[1] = list[i];
+    	child_ctx[6] = list[i];
     	return child_ctx;
     }
 
-    // (94:12) {:else}
+    // (99:2) {#if refreshing}
+    function create_if_block_2(ctx) {
+    	let div1;
+    	let t;
+    	let div0;
+
+    	const block = {
+    		c: function create() {
+    			div1 = element("div");
+    			t = text("Refreshing ");
+    			div0 = element("div");
+    			attr_dev(div0, "class", "loader svelte-yng6tp");
+    			add_location(div0, file, 99, 39, 2379);
+    			attr_dev(div1, "class", "refreshing svelte-yng6tp");
+    			add_location(div1, file, 99, 4, 2344);
+    		},
+    		m: function mount(target, anchor) {
+    			insert_dev(target, div1, anchor);
+    			append_dev(div1, t);
+    			append_dev(div1, div0);
+    		},
+    		d: function destroy(detaching) {
+    			if (detaching) detach_dev(div1);
+    		}
+    	};
+
+    	dispatch_dev("SvelteRegisterBlock", {
+    		block,
+    		id: create_if_block_2.name,
+    		type: "if",
+    		source: "(99:2) {#if refreshing}",
+    		ctx
+    	});
+
+    	return block;
+    }
+
+    // (122:12) {:else}
     function create_else_block(ctx) {
-    	let t_value = /*p*/ ctx[4].subject + "";
+    	let t_value = /*p*/ ctx[9].subject + "";
     	let t;
 
     	const block = {
@@ -6034,7 +6451,7 @@ var app = (function () {
     			insert_dev(target, t, anchor);
     		},
     		p: function update(ctx, dirty) {
-    			if (dirty & /*patchSets*/ 1 && t_value !== (t_value = /*p*/ ctx[4].subject + "")) set_data_dev(t, t_value);
+    			if (dirty & /*patchSets*/ 4 && t_value !== (t_value = /*p*/ ctx[9].subject + "")) set_data_dev(t, t_value);
     		},
     		d: function destroy(detaching) {
     			if (detaching) detach_dev(t);
@@ -6045,17 +6462,17 @@ var app = (function () {
     		block,
     		id: create_else_block.name,
     		type: "else",
-    		source: "(94:12) {:else}",
+    		source: "(122:12) {:else}",
     		ctx
     	});
 
     	return block;
     }
 
-    // (92:12) {#if p.changed_after_self_activity && section[0] !== "closed"}
-    function create_if_block(ctx) {
+    // (120:12) {#if p.changed_after_self_activity && section[0] !== "closed"}
+    function create_if_block_1(ctx) {
     	let b;
-    	let t_value = /*p*/ ctx[4].subject + "";
+    	let t_value = /*p*/ ctx[9].subject + "";
     	let t;
 
     	const block = {
@@ -6063,15 +6480,15 @@ var app = (function () {
     			b = element("b");
     			t = text(t_value);
     			set_style(b, "color", "rgb(232, 234, 237)");
-    			attr_dev(b, "class", "svelte-rdtr17");
-    			add_location(b, file, 92, 14, 2371);
+    			attr_dev(b, "class", "svelte-yng6tp");
+    			add_location(b, file, 120, 14, 3177);
     		},
     		m: function mount(target, anchor) {
     			insert_dev(target, b, anchor);
     			append_dev(b, t);
     		},
     		p: function update(ctx, dirty) {
-    			if (dirty & /*patchSets*/ 1 && t_value !== (t_value = /*p*/ ctx[4].subject + "")) set_data_dev(t, t_value);
+    			if (dirty & /*patchSets*/ 4 && t_value !== (t_value = /*p*/ ctx[9].subject + "")) set_data_dev(t, t_value);
     		},
     		d: function destroy(detaching) {
     			if (detaching) detach_dev(b);
@@ -6080,40 +6497,40 @@ var app = (function () {
 
     	dispatch_dev("SvelteRegisterBlock", {
     		block,
-    		id: create_if_block.name,
+    		id: create_if_block_1.name,
     		type: "if",
-    		source: "(92:12) {#if p.changed_after_self_activity && section[0] !== \\\"closed\\\"}",
+    		source: "(120:12) {#if p.changed_after_self_activity && section[0] !== \\\"closed\\\"}",
     		ctx
     	});
 
     	return block;
     }
 
-    // (89:6) {#each patchSets[section[0]] as p}
-    function create_each_block_1(ctx) {
+    // (117:6) {#each patchSets[section[0]] as p (p.id)}
+    function create_each_block_1(key_1, ctx) {
     	let tr;
     	let td0;
     	let a0;
     	let a0_href_value;
     	let t0;
     	let td1;
-    	let t1_value = /*p*/ ctx[4].status + "";
+    	let t1_value = /*p*/ ctx[9].status + "";
     	let t1;
     	let t2;
     	let td2;
     	let a1;
-    	let t3_value = /*p*/ ctx[4].owner_name + "";
+    	let t3_value = /*p*/ ctx[9].owner_name + "";
     	let t3;
     	let a1_href_value;
     	let t4;
     	let td3;
     	let a2;
-    	let t5_value = /*p*/ ctx[4].project + "";
+    	let t5_value = /*p*/ ctx[9].project + "";
     	let t5;
     	let a2_href_value;
     	let t6;
     	let td4;
-    	let t7_value = moment.utc(/*p*/ ctx[4].updated_at).local().fromNow() + "";
+    	let t7_value = moment.utc(/*p*/ ctx[9].updated_at).local().fromNow() + "";
     	let t7;
     	let t8;
     	let td5;
@@ -6121,34 +6538,34 @@ var app = (function () {
     	let t9;
     	let td6;
     	let div1;
-    	let t10_value = reviewText(/*p*/ ctx[4].reviews.cr) + "";
+    	let t10_value = reviewText(/*p*/ ctx[9].reviews.cr) + "";
     	let t10;
     	let div1_title_value;
     	let td6_title_value;
     	let t11;
     	let td7;
     	let div2;
-    	let t12_value = reviewText(/*p*/ ctx[4].reviews.pr) + "";
+    	let t12_value = reviewText(/*p*/ ctx[9].reviews.pr) + "";
     	let t12;
     	let div2_title_value;
     	let td7_title_value;
     	let t13;
     	let td8;
     	let div3;
-    	let t14_value = reviewText(/*p*/ ctx[4].reviews.qa) + "";
+    	let t14_value = reviewText(/*p*/ ctx[9].reviews.qa) + "";
     	let t14;
     	let div3_title_value;
     	let td8_title_value;
     	let t15;
     	let td9;
     	let div4;
-    	let t16_value = reviewText(/*p*/ ctx[4].reviews.v, true) + "";
+    	let t16_value = reviewText(/*p*/ ctx[9].reviews.v, true) + "";
     	let t16;
     	let td9_title_value;
     	let t17;
 
     	function select_block_type(ctx, dirty) {
-    		if (/*p*/ ctx[4].changed_after_self_activity && /*section*/ ctx[1][0] !== "closed") return create_if_block;
+    		if (/*p*/ ctx[9].changed_after_self_activity && /*section*/ ctx[6][0] !== "closed") return create_if_block_1;
     		return create_else_block;
     	}
 
@@ -6156,6 +6573,8 @@ var app = (function () {
     	let if_block = current_block_type(ctx);
 
     	const block = {
+    		key: key_1,
+    		first: null,
     		c: function create() {
     			tr = element("tr");
     			td0 = element("td");
@@ -6195,65 +6614,66 @@ var app = (function () {
     			div4 = element("div");
     			t16 = text(t16_value);
     			t17 = space();
-    			attr_dev(a0, "href", a0_href_value = "" + (window.BASE_API_URL + "/c/" + /*p*/ ctx[4].project + "/+/" + /*p*/ ctx[4].id));
-    			attr_dev(a0, "class", "svelte-rdtr17");
-    			add_location(a0, file, 90, 31, 2226);
-    			attr_dev(td0, "class", "td-first svelte-rdtr17");
-    			add_location(td0, file, 90, 10, 2205);
-    			set_style(td1, "color", statusColor(/*p*/ ctx[4].status));
-    			attr_dev(td1, "class", "svelte-rdtr17");
-    			add_location(td1, file, 97, 10, 2519);
-    			attr_dev(a1, "href", a1_href_value = "" + (window.BASE_API_URL + "/q/owner:" + /*p*/ ctx[4].owner_email));
-    			attr_dev(a1, "class", "svelte-rdtr17");
-    			add_location(a1, file, 98, 14, 2593);
-    			attr_dev(td2, "class", "svelte-rdtr17");
-    			add_location(td2, file, 98, 10, 2589);
-    			attr_dev(a2, "href", a2_href_value = "" + (window.BASE_API_URL + "/q/project:" + /*p*/ ctx[4].project));
-    			attr_dev(a2, "class", "svelte-rdtr17");
-    			add_location(a2, file, 99, 14, 2683);
-    			attr_dev(td3, "class", "svelte-rdtr17");
-    			add_location(td3, file, 99, 10, 2679);
-    			attr_dev(td4, "class", "svelte-rdtr17");
-    			add_location(td4, file, 100, 10, 2764);
-    			attr_dev(div0, "class", "size-bar-inner svelte-rdtr17");
-    			set_style(div0, "width", /*p*/ ctx[4].size + "%");
-    			set_style(div0, "background-color", sizeBarColor(/*p*/ ctx[4].size));
-    			add_location(div0, file, 101, 39, 2857);
-    			attr_dev(td5, "class", "size-bar-wrapper svelte-rdtr17");
-    			add_location(td5, file, 101, 10, 2828);
+    			attr_dev(a0, "href", a0_href_value = "" + (window.BASE_API_URL + "/c/" + /*p*/ ctx[9].project + "/+/" + /*p*/ ctx[9].id));
+    			attr_dev(a0, "class", "svelte-yng6tp");
+    			add_location(a0, file, 118, 31, 3032);
+    			attr_dev(td0, "class", "td-first svelte-yng6tp");
+    			add_location(td0, file, 118, 10, 3011);
+    			set_style(td1, "color", statusColor(/*p*/ ctx[9].status));
+    			attr_dev(td1, "class", "svelte-yng6tp");
+    			add_location(td1, file, 125, 10, 3325);
+    			attr_dev(a1, "href", a1_href_value = "" + (window.BASE_API_URL + "/q/owner:" + /*p*/ ctx[9].owner_email));
+    			attr_dev(a1, "class", "svelte-yng6tp");
+    			add_location(a1, file, 126, 14, 3399);
+    			attr_dev(td2, "class", "svelte-yng6tp");
+    			add_location(td2, file, 126, 10, 3395);
+    			attr_dev(a2, "href", a2_href_value = "" + (window.BASE_API_URL + "/q/project:" + /*p*/ ctx[9].project));
+    			attr_dev(a2, "class", "svelte-yng6tp");
+    			add_location(a2, file, 127, 14, 3489);
+    			attr_dev(td3, "class", "svelte-yng6tp");
+    			add_location(td3, file, 127, 10, 3485);
+    			attr_dev(td4, "class", "svelte-yng6tp");
+    			add_location(td4, file, 128, 10, 3570);
+    			attr_dev(div0, "class", "size-bar-inner svelte-yng6tp");
+    			set_style(div0, "width", /*p*/ ctx[9].size + "%");
+    			set_style(div0, "background-color", sizeBarColor(/*p*/ ctx[9].size));
+    			add_location(div0, file, 129, 39, 3663);
+    			attr_dev(td5, "class", "size-bar-wrapper svelte-yng6tp");
+    			add_location(td5, file, 129, 10, 3634);
     			attr_dev(div1, "role", "img");
-    			attr_dev(div1, "title", div1_title_value = /*p*/ ctx[4].reviews.cr.person);
-    			attr_dev(div1, "class", "svelte-rdtr17");
-    			add_location(div1, file, 103, 12, 3096);
-    			attr_dev(td6, "class", "border-left svelte-rdtr17");
-    			set_style(td6, "background-color", reviewColor(/*p*/ ctx[4].reviews.cr));
-    			attr_dev(td6, "title", td6_title_value = /*p*/ ctx[4].reviews.cr.person);
-    			add_location(td6, file, 102, 10, 2974);
+    			attr_dev(div1, "title", div1_title_value = /*p*/ ctx[9].reviews.cr.person);
+    			attr_dev(div1, "class", "svelte-yng6tp");
+    			add_location(div1, file, 131, 12, 3902);
+    			attr_dev(td6, "class", "border-left svelte-yng6tp");
+    			set_style(td6, "background-color", reviewColor(/*p*/ ctx[9].reviews.cr));
+    			attr_dev(td6, "title", td6_title_value = /*p*/ ctx[9].reviews.cr.person);
+    			add_location(td6, file, 130, 10, 3780);
     			attr_dev(div2, "role", "img");
-    			attr_dev(div2, "title", div2_title_value = /*p*/ ctx[4].reviews.pr.person);
-    			attr_dev(div2, "class", "svelte-rdtr17");
-    			add_location(div2, file, 106, 12, 3323);
-    			attr_dev(td7, "class", "border-left svelte-rdtr17");
-    			set_style(td7, "background-color", reviewColor(/*p*/ ctx[4].reviews.pr));
-    			attr_dev(td7, "title", td7_title_value = /*p*/ ctx[4].reviews.pr.person);
-    			add_location(td7, file, 105, 10, 3201);
+    			attr_dev(div2, "title", div2_title_value = /*p*/ ctx[9].reviews.pr.person);
+    			attr_dev(div2, "class", "svelte-yng6tp");
+    			add_location(div2, file, 134, 12, 4129);
+    			attr_dev(td7, "class", "border-left svelte-yng6tp");
+    			set_style(td7, "background-color", reviewColor(/*p*/ ctx[9].reviews.pr));
+    			attr_dev(td7, "title", td7_title_value = /*p*/ ctx[9].reviews.pr.person);
+    			add_location(td7, file, 133, 10, 4007);
     			attr_dev(div3, "role", "img");
-    			attr_dev(div3, "title", div3_title_value = /*p*/ ctx[4].reviews.qa.person);
-    			attr_dev(div3, "class", "svelte-rdtr17");
-    			add_location(div3, file, 109, 12, 3550);
-    			attr_dev(td8, "class", "border-left svelte-rdtr17");
-    			set_style(td8, "background-color", reviewColor(/*p*/ ctx[4].reviews.qa));
-    			attr_dev(td8, "title", td8_title_value = /*p*/ ctx[4].reviews.qa.person);
-    			add_location(td8, file, 108, 10, 3428);
+    			attr_dev(div3, "title", div3_title_value = /*p*/ ctx[9].reviews.qa.person);
+    			attr_dev(div3, "class", "svelte-yng6tp");
+    			add_location(div3, file, 137, 12, 4356);
+    			attr_dev(td8, "class", "border-left svelte-yng6tp");
+    			set_style(td8, "background-color", reviewColor(/*p*/ ctx[9].reviews.qa));
+    			attr_dev(td8, "title", td8_title_value = /*p*/ ctx[9].reviews.qa.person);
+    			add_location(td8, file, 136, 10, 4234);
     			attr_dev(div4, "role", "img");
-    			attr_dev(div4, "class", "svelte-rdtr17");
-    			add_location(div4, file, 112, 12, 3775);
-    			attr_dev(td9, "class", "border-left svelte-rdtr17");
-    			set_style(td9, "background-color", reviewColor(/*p*/ ctx[4].reviews.v));
-    			attr_dev(td9, "title", td9_title_value = /*p*/ ctx[4].reviews.v.person);
-    			add_location(td9, file, 111, 10, 3655);
-    			attr_dev(tr, "class", "svelte-rdtr17");
-    			add_location(tr, file, 89, 8, 2190);
+    			attr_dev(div4, "class", "svelte-yng6tp");
+    			add_location(div4, file, 140, 12, 4581);
+    			attr_dev(td9, "class", "border-left svelte-yng6tp");
+    			set_style(td9, "background-color", reviewColor(/*p*/ ctx[9].reviews.v));
+    			attr_dev(td9, "title", td9_title_value = /*p*/ ctx[9].reviews.v.person);
+    			add_location(td9, file, 139, 10, 4461);
+    			attr_dev(tr, "class", "svelte-yng6tp");
+    			add_location(tr, file, 117, 8, 2996);
+    			this.first = tr;
     		},
     		m: function mount(target, anchor) {
     			insert_dev(target, tr, anchor);
@@ -6308,87 +6728,87 @@ var app = (function () {
     				}
     			}
 
-    			if (dirty & /*patchSets*/ 1 && a0_href_value !== (a0_href_value = "" + (window.BASE_API_URL + "/c/" + /*p*/ ctx[4].project + "/+/" + /*p*/ ctx[4].id))) {
+    			if (dirty & /*patchSets*/ 4 && a0_href_value !== (a0_href_value = "" + (window.BASE_API_URL + "/c/" + /*p*/ ctx[9].project + "/+/" + /*p*/ ctx[9].id))) {
     				attr_dev(a0, "href", a0_href_value);
     			}
 
-    			if (dirty & /*patchSets*/ 1 && t1_value !== (t1_value = /*p*/ ctx[4].status + "")) set_data_dev(t1, t1_value);
+    			if (dirty & /*patchSets*/ 4 && t1_value !== (t1_value = /*p*/ ctx[9].status + "")) set_data_dev(t1, t1_value);
 
-    			if (dirty & /*patchSets*/ 1) {
-    				set_style(td1, "color", statusColor(/*p*/ ctx[4].status));
+    			if (dirty & /*patchSets*/ 4) {
+    				set_style(td1, "color", statusColor(/*p*/ ctx[9].status));
     			}
 
-    			if (dirty & /*patchSets*/ 1 && t3_value !== (t3_value = /*p*/ ctx[4].owner_name + "")) set_data_dev(t3, t3_value);
+    			if (dirty & /*patchSets*/ 4 && t3_value !== (t3_value = /*p*/ ctx[9].owner_name + "")) set_data_dev(t3, t3_value);
 
-    			if (dirty & /*patchSets*/ 1 && a1_href_value !== (a1_href_value = "" + (window.BASE_API_URL + "/q/owner:" + /*p*/ ctx[4].owner_email))) {
+    			if (dirty & /*patchSets*/ 4 && a1_href_value !== (a1_href_value = "" + (window.BASE_API_URL + "/q/owner:" + /*p*/ ctx[9].owner_email))) {
     				attr_dev(a1, "href", a1_href_value);
     			}
 
-    			if (dirty & /*patchSets*/ 1 && t5_value !== (t5_value = /*p*/ ctx[4].project + "")) set_data_dev(t5, t5_value);
+    			if (dirty & /*patchSets*/ 4 && t5_value !== (t5_value = /*p*/ ctx[9].project + "")) set_data_dev(t5, t5_value);
 
-    			if (dirty & /*patchSets*/ 1 && a2_href_value !== (a2_href_value = "" + (window.BASE_API_URL + "/q/project:" + /*p*/ ctx[4].project))) {
+    			if (dirty & /*patchSets*/ 4 && a2_href_value !== (a2_href_value = "" + (window.BASE_API_URL + "/q/project:" + /*p*/ ctx[9].project))) {
     				attr_dev(a2, "href", a2_href_value);
     			}
 
-    			if (dirty & /*patchSets*/ 1 && t7_value !== (t7_value = moment.utc(/*p*/ ctx[4].updated_at).local().fromNow() + "")) set_data_dev(t7, t7_value);
+    			if (dirty & /*patchSets*/ 4 && t7_value !== (t7_value = moment.utc(/*p*/ ctx[9].updated_at).local().fromNow() + "")) set_data_dev(t7, t7_value);
 
-    			if (dirty & /*patchSets*/ 1) {
-    				set_style(div0, "width", /*p*/ ctx[4].size + "%");
+    			if (dirty & /*patchSets*/ 4) {
+    				set_style(div0, "width", /*p*/ ctx[9].size + "%");
     			}
 
-    			if (dirty & /*patchSets*/ 1) {
-    				set_style(div0, "background-color", sizeBarColor(/*p*/ ctx[4].size));
+    			if (dirty & /*patchSets*/ 4) {
+    				set_style(div0, "background-color", sizeBarColor(/*p*/ ctx[9].size));
     			}
 
-    			if (dirty & /*patchSets*/ 1 && t10_value !== (t10_value = reviewText(/*p*/ ctx[4].reviews.cr) + "")) set_data_dev(t10, t10_value);
+    			if (dirty & /*patchSets*/ 4 && t10_value !== (t10_value = reviewText(/*p*/ ctx[9].reviews.cr) + "")) set_data_dev(t10, t10_value);
 
-    			if (dirty & /*patchSets*/ 1 && div1_title_value !== (div1_title_value = /*p*/ ctx[4].reviews.cr.person)) {
+    			if (dirty & /*patchSets*/ 4 && div1_title_value !== (div1_title_value = /*p*/ ctx[9].reviews.cr.person)) {
     				attr_dev(div1, "title", div1_title_value);
     			}
 
-    			if (dirty & /*patchSets*/ 1) {
-    				set_style(td6, "background-color", reviewColor(/*p*/ ctx[4].reviews.cr));
+    			if (dirty & /*patchSets*/ 4) {
+    				set_style(td6, "background-color", reviewColor(/*p*/ ctx[9].reviews.cr));
     			}
 
-    			if (dirty & /*patchSets*/ 1 && td6_title_value !== (td6_title_value = /*p*/ ctx[4].reviews.cr.person)) {
+    			if (dirty & /*patchSets*/ 4 && td6_title_value !== (td6_title_value = /*p*/ ctx[9].reviews.cr.person)) {
     				attr_dev(td6, "title", td6_title_value);
     			}
 
-    			if (dirty & /*patchSets*/ 1 && t12_value !== (t12_value = reviewText(/*p*/ ctx[4].reviews.pr) + "")) set_data_dev(t12, t12_value);
+    			if (dirty & /*patchSets*/ 4 && t12_value !== (t12_value = reviewText(/*p*/ ctx[9].reviews.pr) + "")) set_data_dev(t12, t12_value);
 
-    			if (dirty & /*patchSets*/ 1 && div2_title_value !== (div2_title_value = /*p*/ ctx[4].reviews.pr.person)) {
+    			if (dirty & /*patchSets*/ 4 && div2_title_value !== (div2_title_value = /*p*/ ctx[9].reviews.pr.person)) {
     				attr_dev(div2, "title", div2_title_value);
     			}
 
-    			if (dirty & /*patchSets*/ 1) {
-    				set_style(td7, "background-color", reviewColor(/*p*/ ctx[4].reviews.pr));
+    			if (dirty & /*patchSets*/ 4) {
+    				set_style(td7, "background-color", reviewColor(/*p*/ ctx[9].reviews.pr));
     			}
 
-    			if (dirty & /*patchSets*/ 1 && td7_title_value !== (td7_title_value = /*p*/ ctx[4].reviews.pr.person)) {
+    			if (dirty & /*patchSets*/ 4 && td7_title_value !== (td7_title_value = /*p*/ ctx[9].reviews.pr.person)) {
     				attr_dev(td7, "title", td7_title_value);
     			}
 
-    			if (dirty & /*patchSets*/ 1 && t14_value !== (t14_value = reviewText(/*p*/ ctx[4].reviews.qa) + "")) set_data_dev(t14, t14_value);
+    			if (dirty & /*patchSets*/ 4 && t14_value !== (t14_value = reviewText(/*p*/ ctx[9].reviews.qa) + "")) set_data_dev(t14, t14_value);
 
-    			if (dirty & /*patchSets*/ 1 && div3_title_value !== (div3_title_value = /*p*/ ctx[4].reviews.qa.person)) {
+    			if (dirty & /*patchSets*/ 4 && div3_title_value !== (div3_title_value = /*p*/ ctx[9].reviews.qa.person)) {
     				attr_dev(div3, "title", div3_title_value);
     			}
 
-    			if (dirty & /*patchSets*/ 1) {
-    				set_style(td8, "background-color", reviewColor(/*p*/ ctx[4].reviews.qa));
+    			if (dirty & /*patchSets*/ 4) {
+    				set_style(td8, "background-color", reviewColor(/*p*/ ctx[9].reviews.qa));
     			}
 
-    			if (dirty & /*patchSets*/ 1 && td8_title_value !== (td8_title_value = /*p*/ ctx[4].reviews.qa.person)) {
+    			if (dirty & /*patchSets*/ 4 && td8_title_value !== (td8_title_value = /*p*/ ctx[9].reviews.qa.person)) {
     				attr_dev(td8, "title", td8_title_value);
     			}
 
-    			if (dirty & /*patchSets*/ 1 && t16_value !== (t16_value = reviewText(/*p*/ ctx[4].reviews.v, true) + "")) set_data_dev(t16, t16_value);
+    			if (dirty & /*patchSets*/ 4 && t16_value !== (t16_value = reviewText(/*p*/ ctx[9].reviews.v, true) + "")) set_data_dev(t16, t16_value);
 
-    			if (dirty & /*patchSets*/ 1) {
-    				set_style(td9, "background-color", reviewColor(/*p*/ ctx[4].reviews.v));
+    			if (dirty & /*patchSets*/ 4) {
+    				set_style(td9, "background-color", reviewColor(/*p*/ ctx[9].reviews.v));
     			}
 
-    			if (dirty & /*patchSets*/ 1 && td9_title_value !== (td9_title_value = /*p*/ ctx[4].reviews.v.person)) {
+    			if (dirty & /*patchSets*/ 4 && td9_title_value !== (td9_title_value = /*p*/ ctx[9].reviews.v.person)) {
     				attr_dev(td9, "title", td9_title_value);
     			}
     		},
@@ -6402,31 +6822,38 @@ var app = (function () {
     		block,
     		id: create_each_block_1.name,
     		type: "each",
-    		source: "(89:6) {#each patchSets[section[0]] as p}",
+    		source: "(117:6) {#each patchSets[section[0]] as p (p.id)}",
     		ctx
     	});
 
     	return block;
     }
 
-    // (87:4) {#each [["mine", "My Changes"], ["others", "Others' Changes"], ["closed", "Closed"]] as section}
-    function create_each_block(ctx) {
+    // (115:4) {#each [["mine", "My Changes"], ["others", "Others' Changes"], ["closed", "Closed"]] as section (section[0])}
+    function create_each_block(key_1, ctx) {
     	let tr;
     	let td;
     	let b;
-    	let t0_value = /*section*/ ctx[1][1] + "";
+    	let t0_value = /*section*/ ctx[6][1] + "";
     	let t0;
     	let t1;
-    	let each_1_anchor;
-    	let each_value_1 = /*patchSets*/ ctx[0][/*section*/ ctx[1][0]];
-    	validate_each_argument(each_value_1);
     	let each_blocks = [];
+    	let each_1_lookup = new Map();
+    	let each_1_anchor;
+    	let each_value_1 = /*patchSets*/ ctx[2][/*section*/ ctx[6][0]];
+    	validate_each_argument(each_value_1);
+    	const get_key = ctx => /*p*/ ctx[9].id;
+    	validate_each_keys(ctx, each_value_1, get_each_context_1, get_key);
 
     	for (let i = 0; i < each_value_1.length; i += 1) {
-    		each_blocks[i] = create_each_block_1(get_each_context_1(ctx, each_value_1, i));
+    		let child_ctx = get_each_context_1(ctx, each_value_1, i);
+    		let key = get_key(child_ctx);
+    		each_1_lookup.set(key, each_blocks[i] = create_each_block_1(key, child_ctx));
     	}
 
     	const block = {
+    		key: key_1,
+    		first: null,
     		c: function create() {
     			tr = element("tr");
     			td = element("td");
@@ -6439,13 +6866,14 @@ var app = (function () {
     			}
 
     			each_1_anchor = empty();
-    			attr_dev(b, "class", "svelte-rdtr17");
-    			add_location(b, file, 87, 54, 2111);
+    			attr_dev(b, "class", "svelte-yng6tp");
+    			add_location(b, file, 115, 54, 2910);
     			attr_dev(td, "colspan", "10");
-    			attr_dev(td, "class", "tr-header td-first svelte-rdtr17");
-    			add_location(td, file, 87, 10, 2067);
-    			attr_dev(tr, "class", "svelte-rdtr17");
-    			add_location(tr, file, 87, 6, 2063);
+    			attr_dev(td, "class", "tr-header td-first svelte-yng6tp");
+    			add_location(td, file, 115, 10, 2866);
+    			attr_dev(tr, "class", "svelte-yng6tp");
+    			add_location(tr, file, 115, 6, 2862);
+    			this.first = tr;
     		},
     		m: function mount(target, anchor) {
     			insert_dev(target, tr, anchor);
@@ -6461,34 +6889,21 @@ var app = (function () {
     			insert_dev(target, each_1_anchor, anchor);
     		},
     		p: function update(ctx, dirty) {
-    			if (dirty & /*reviewColor, patchSets, reviewText, sizeBarColor, moment, window, statusColor*/ 1) {
-    				each_value_1 = /*patchSets*/ ctx[0][/*section*/ ctx[1][0]];
+    			if (dirty & /*reviewColor, patchSets, reviewText, sizeBarColor, moment, window, statusColor*/ 4) {
+    				const each_value_1 = /*patchSets*/ ctx[2][/*section*/ ctx[6][0]];
     				validate_each_argument(each_value_1);
-    				let i;
-
-    				for (i = 0; i < each_value_1.length; i += 1) {
-    					const child_ctx = get_each_context_1(ctx, each_value_1, i);
-
-    					if (each_blocks[i]) {
-    						each_blocks[i].p(child_ctx, dirty);
-    					} else {
-    						each_blocks[i] = create_each_block_1(child_ctx);
-    						each_blocks[i].c();
-    						each_blocks[i].m(each_1_anchor.parentNode, each_1_anchor);
-    					}
-    				}
-
-    				for (; i < each_blocks.length; i += 1) {
-    					each_blocks[i].d(1);
-    				}
-
-    				each_blocks.length = each_value_1.length;
+    				validate_each_keys(ctx, each_value_1, get_each_context_1, get_key);
+    				each_blocks = update_keyed_each(each_blocks, dirty, get_key, 1, ctx, each_value_1, each_1_lookup, each_1_anchor.parentNode, destroy_block, create_each_block_1, each_1_anchor, get_each_context_1);
     			}
     		},
     		d: function destroy(detaching) {
     			if (detaching) detach_dev(tr);
     			if (detaching) detach_dev(t1);
-    			destroy_each(each_blocks, detaching);
+
+    			for (let i = 0; i < each_blocks.length; i += 1) {
+    				each_blocks[i].d(detaching);
+    			}
+
     			if (detaching) detach_dev(each_1_anchor);
     		}
     	};
@@ -6497,7 +6912,45 @@ var app = (function () {
     		block,
     		id: create_each_block.name,
     		type: "each",
-    		source: "(87:4) {#each [[\\\"mine\\\", \\\"My Changes\\\"], [\\\"others\\\", \\\"Others' Changes\\\"], [\\\"closed\\\", \\\"Closed\\\"]] as section}",
+    		source: "(115:4) {#each [[\\\"mine\\\", \\\"My Changes\\\"], [\\\"others\\\", \\\"Others' Changes\\\"], [\\\"closed\\\", \\\"Closed\\\"]] as section (section[0])}",
+    		ctx
+    	});
+
+    	return block;
+    }
+
+    // (147:2) {#if updatedAtText}
+    function create_if_block(ctx) {
+    	let div;
+    	let t0;
+    	let t1;
+
+    	const block = {
+    		c: function create() {
+    			div = element("div");
+    			t0 = text("Updated ");
+    			t1 = text(/*updatedAtText*/ ctx[1]);
+    			attr_dev(div, "class", "updated svelte-yng6tp");
+    			add_location(div, file, 147, 4, 4728);
+    		},
+    		m: function mount(target, anchor) {
+    			insert_dev(target, div, anchor);
+    			append_dev(div, t0);
+    			append_dev(div, t1);
+    		},
+    		p: function update(ctx, dirty) {
+    			if (dirty & /*updatedAtText*/ 2) set_data_dev(t1, /*updatedAtText*/ ctx[1]);
+    		},
+    		d: function destroy(detaching) {
+    			if (detaching) detach_dev(div);
+    		}
+    	};
+
+    	dispatch_dev("SvelteRegisterBlock", {
+    		block,
+    		id: create_if_block.name,
+    		type: "if",
+    		source: "(147:2) {#if updatedAtText}",
     		ctx
     	});
 
@@ -6508,35 +6961,45 @@ var app = (function () {
     	let main;
     	let header;
     	let t1;
+    	let t2;
     	let table;
     	let tr;
     	let th0;
-    	let t3;
+    	let t4;
     	let th1;
-    	let t5;
+    	let t6;
     	let th2;
-    	let t7;
+    	let t8;
     	let th3;
-    	let t9;
+    	let t10;
     	let th4;
-    	let t11;
+    	let t12;
     	let th5;
-    	let t13;
+    	let t14;
     	let th6;
-    	let t15;
+    	let t16;
     	let th7;
-    	let t17;
+    	let t18;
     	let th8;
-    	let t19;
+    	let t20;
     	let th9;
-    	let t21;
+    	let t22;
+    	let each_blocks = [];
+    	let each_1_lookup = new Map();
+    	let t23;
+    	let if_block0 = /*refreshing*/ ctx[0] && create_if_block_2(ctx);
     	let each_value = [["mine", "My Changes"], ["others", "Others' Changes"], ["closed", "Closed"]];
     	validate_each_argument(each_value);
-    	let each_blocks = [];
+    	const get_key = ctx => /*section*/ ctx[6][0];
+    	validate_each_keys(ctx, each_value, get_each_context, get_key);
 
     	for (let i = 0; i < 3; i += 1) {
-    		each_blocks[i] = create_each_block(get_each_context(ctx, each_value, i));
+    		let child_ctx = get_each_context(ctx, each_value, i);
+    		let key = get_key(child_ctx);
+    		each_1_lookup.set(key, each_blocks[i] = create_each_block(key, child_ctx));
     	}
+
+    	let if_block1 = /*updatedAtText*/ ctx[1] && create_if_block(ctx);
 
     	const block = {
     		c: function create() {
@@ -6544,70 +7007,74 @@ var app = (function () {
     			header = element("header");
     			header.textContent = "BetterGerrit";
     			t1 = space();
+    			if (if_block0) if_block0.c();
+    			t2 = space();
     			table = element("table");
     			tr = element("tr");
     			th0 = element("th");
     			th0.textContent = "Subject";
-    			t3 = space();
+    			t4 = space();
     			th1 = element("th");
     			th1.textContent = "Status";
-    			t5 = space();
+    			t6 = space();
     			th2 = element("th");
     			th2.textContent = "Owner";
-    			t7 = space();
+    			t8 = space();
     			th3 = element("th");
     			th3.textContent = "Repo";
-    			t9 = space();
+    			t10 = space();
     			th4 = element("th");
     			th4.textContent = "Updated";
-    			t11 = space();
+    			t12 = space();
     			th5 = element("th");
     			th5.textContent = "Size";
-    			t13 = space();
+    			t14 = space();
     			th6 = element("th");
     			th6.textContent = "CR";
-    			t15 = space();
+    			t16 = space();
     			th7 = element("th");
     			th7.textContent = "PR";
-    			t17 = space();
+    			t18 = space();
     			th8 = element("th");
     			th8.textContent = "QA";
-    			t19 = space();
+    			t20 = space();
     			th9 = element("th");
     			th9.textContent = "V";
-    			t21 = space();
+    			t22 = space();
 
     			for (let i = 0; i < 3; i += 1) {
     				each_blocks[i].c();
     			}
 
-    			attr_dev(header, "class", "svelte-rdtr17");
-    			add_location(header, file, 72, 2, 1600);
-    			attr_dev(th0, "class", "td-first svelte-rdtr17");
-    			add_location(th0, file, 75, 6, 1655);
-    			attr_dev(th1, "class", "svelte-rdtr17");
-    			add_location(th1, file, 76, 6, 1695);
-    			attr_dev(th2, "class", "svelte-rdtr17");
-    			add_location(th2, file, 77, 6, 1717);
-    			attr_dev(th3, "class", "svelte-rdtr17");
-    			add_location(th3, file, 78, 6, 1738);
-    			attr_dev(th4, "class", "svelte-rdtr17");
-    			add_location(th4, file, 79, 6, 1758);
-    			attr_dev(th5, "class", "svelte-rdtr17");
-    			add_location(th5, file, 80, 6, 1781);
-    			attr_dev(th6, "class", "border-left svelte-rdtr17");
-    			add_location(th6, file, 81, 6, 1801);
-    			attr_dev(th7, "class", "border-left svelte-rdtr17");
-    			add_location(th7, file, 82, 6, 1839);
-    			attr_dev(th8, "class", "border-left svelte-rdtr17");
-    			add_location(th8, file, 83, 6, 1877);
-    			attr_dev(th9, "class", "border-left svelte-rdtr17");
-    			add_location(th9, file, 84, 6, 1915);
-    			attr_dev(tr, "class", "svelte-rdtr17");
-    			add_location(tr, file, 74, 4, 1644);
-    			attr_dev(table, "class", "svelte-rdtr17");
-    			add_location(table, file, 73, 2, 1632);
-    			add_location(main, file, 71, 0, 1591);
+    			t23 = space();
+    			if (if_block1) if_block1.c();
+    			attr_dev(header, "class", "svelte-yng6tp");
+    			add_location(header, file, 97, 2, 2291);
+    			attr_dev(th0, "class", "td-first svelte-yng6tp");
+    			add_location(th0, file, 103, 6, 2441);
+    			attr_dev(th1, "class", "svelte-yng6tp");
+    			add_location(th1, file, 104, 6, 2481);
+    			attr_dev(th2, "class", "svelte-yng6tp");
+    			add_location(th2, file, 105, 6, 2503);
+    			attr_dev(th3, "class", "svelte-yng6tp");
+    			add_location(th3, file, 106, 6, 2524);
+    			attr_dev(th4, "class", "svelte-yng6tp");
+    			add_location(th4, file, 107, 6, 2544);
+    			attr_dev(th5, "class", "svelte-yng6tp");
+    			add_location(th5, file, 108, 6, 2567);
+    			attr_dev(th6, "class", "border-left svelte-yng6tp");
+    			add_location(th6, file, 109, 6, 2587);
+    			attr_dev(th7, "class", "border-left svelte-yng6tp");
+    			add_location(th7, file, 110, 6, 2625);
+    			attr_dev(th8, "class", "border-left svelte-yng6tp");
+    			add_location(th8, file, 111, 6, 2663);
+    			attr_dev(th9, "class", "border-left svelte-yng6tp");
+    			add_location(th9, file, 112, 6, 2701);
+    			attr_dev(tr, "class", "svelte-yng6tp");
+    			add_location(tr, file, 102, 4, 2430);
+    			attr_dev(table, "class", "svelte-yng6tp");
+    			add_location(table, file, 101, 2, 2418);
+    			add_location(main, file, 96, 0, 2282);
     		},
     		l: function claim(nodes) {
     			throw new Error("options.hydrate only works if the component was compiled with the `hydratable: true` option");
@@ -6616,66 +7083,86 @@ var app = (function () {
     			insert_dev(target, main, anchor);
     			append_dev(main, header);
     			append_dev(main, t1);
+    			if (if_block0) if_block0.m(main, null);
+    			append_dev(main, t2);
     			append_dev(main, table);
     			append_dev(table, tr);
     			append_dev(tr, th0);
-    			append_dev(tr, t3);
+    			append_dev(tr, t4);
     			append_dev(tr, th1);
-    			append_dev(tr, t5);
+    			append_dev(tr, t6);
     			append_dev(tr, th2);
-    			append_dev(tr, t7);
+    			append_dev(tr, t8);
     			append_dev(tr, th3);
-    			append_dev(tr, t9);
+    			append_dev(tr, t10);
     			append_dev(tr, th4);
-    			append_dev(tr, t11);
+    			append_dev(tr, t12);
     			append_dev(tr, th5);
-    			append_dev(tr, t13);
+    			append_dev(tr, t14);
     			append_dev(tr, th6);
-    			append_dev(tr, t15);
+    			append_dev(tr, t16);
     			append_dev(tr, th7);
-    			append_dev(tr, t17);
+    			append_dev(tr, t18);
     			append_dev(tr, th8);
-    			append_dev(tr, t19);
+    			append_dev(tr, t20);
     			append_dev(tr, th9);
-    			append_dev(table, t21);
+    			append_dev(table, t22);
 
     			for (let i = 0; i < 3; i += 1) {
     				each_blocks[i].m(table, null);
     			}
+
+    			append_dev(main, t23);
+    			if (if_block1) if_block1.m(main, null);
     		},
     		p: function update(ctx, [dirty]) {
-    			if (dirty & /*patchSets, reviewColor, reviewText, sizeBarColor, moment, window, statusColor*/ 1) {
-    				each_value = [
+    			if (/*refreshing*/ ctx[0]) {
+    				if (if_block0) ; else {
+    					if_block0 = create_if_block_2(ctx);
+    					if_block0.c();
+    					if_block0.m(main, t2);
+    				}
+    			} else if (if_block0) {
+    				if_block0.d(1);
+    				if_block0 = null;
+    			}
+
+    			if (dirty & /*patchSets, reviewColor, reviewText, sizeBarColor, moment, window, statusColor*/ 4) {
+    				const each_value = [
     					["mine", "My Changes"],
     					["others", "Others' Changes"],
     					["closed", "Closed"]
     				];
 
     				validate_each_argument(each_value);
-    				let i;
+    				validate_each_keys(ctx, each_value, get_each_context, get_key);
+    				each_blocks = update_keyed_each(each_blocks, dirty, get_key, 1, ctx, each_value, each_1_lookup, table, destroy_block, create_each_block, null, get_each_context);
+    			}
 
-    				for (i = 0; i < 3; i += 1) {
-    					const child_ctx = get_each_context(ctx, each_value, i);
-
-    					if (each_blocks[i]) {
-    						each_blocks[i].p(child_ctx, dirty);
-    					} else {
-    						each_blocks[i] = create_each_block(child_ctx);
-    						each_blocks[i].c();
-    						each_blocks[i].m(table, null);
-    					}
+    			if (/*updatedAtText*/ ctx[1]) {
+    				if (if_block1) {
+    					if_block1.p(ctx, dirty);
+    				} else {
+    					if_block1 = create_if_block(ctx);
+    					if_block1.c();
+    					if_block1.m(main, null);
     				}
-
-    				for (; i < 3; i += 1) {
-    					each_blocks[i].d(1);
-    				}
+    			} else if (if_block1) {
+    				if_block1.d(1);
+    				if_block1 = null;
     			}
     		},
     		i: noop,
     		o: noop,
     		d: function destroy(detaching) {
     			if (detaching) detach_dev(main);
-    			destroy_each(each_blocks, detaching);
+    			if (if_block0) if_block0.d();
+
+    			for (let i = 0; i < 3; i += 1) {
+    				each_blocks[i].d();
+    			}
+
+    			if (if_block1) if_block1.d();
     		}
     	};
 
@@ -6749,15 +7236,45 @@ var app = (function () {
     }
 
     function instance($$self, $$props, $$invalidate) {
+    	let { refreshing = false } = $$props;
+    	let updatedAt = null;
+    	let { updatedAtText = null } = $$props;
     	let { patchSets = { mine: [], others: [], closed: [] } } = $$props;
+    	let lastFetch = Date.now();
 
-    	onMount(async () => {
+    	async function fetchChanges() {
     		await fetch(`/changes`).then(r => r.json()).then(data => {
-    			$$invalidate(0, patchSets = data);
+    			$$invalidate(2, patchSets = data);
+    			$$invalidate(0, refreshing = false);
+    			lastFetch = Date.now();
+    			updatedAt = Date.now();
+    			$$invalidate(1, updatedAtText = moment(updatedAt).fromNow());
     		});
+    	}
+
+    	onMount(() => {
+    		fetchChanges();
+
+    		const updatedAtInterval = setInterval(
+    			() => {
+    				$$invalidate(1, updatedAtText = updatedAt && moment(updatedAt).fromNow());
+    			},
+    			5000
+    		);
+
+    		return () => {
+    			clearInterval(updatedAtInterval);
+    		};
     	});
 
-    	const writable_props = ["patchSets"];
+    	ifvisible.on("focus", function () {
+    		if (Date.now() - lastFetch > 120000) {
+    			$$invalidate(0, refreshing = true);
+    			fetchChanges();
+    		}
+    	});
+
+    	const writable_props = ["refreshing", "updatedAtText", "patchSets"];
 
     	Object.keys($$props).forEach(key => {
     		if (!~writable_props.indexOf(key) && key.slice(0, 2) !== "$$") console.warn(`<App> was created with unknown prop '${key}'`);
@@ -6767,13 +7284,21 @@ var app = (function () {
     	validate_slots("App", $$slots, []);
 
     	$$self.$set = $$props => {
-    		if ("patchSets" in $$props) $$invalidate(0, patchSets = $$props.patchSets);
+    		if ("refreshing" in $$props) $$invalidate(0, refreshing = $$props.refreshing);
+    		if ("updatedAtText" in $$props) $$invalidate(1, updatedAtText = $$props.updatedAtText);
+    		if ("patchSets" in $$props) $$invalidate(2, patchSets = $$props.patchSets);
     	};
 
     	$$self.$capture_state = () => ({
     		onMount,
     		moment,
+    		ifvisible,
+    		refreshing,
+    		updatedAt,
+    		updatedAtText,
     		patchSets,
+    		lastFetch,
+    		fetchChanges,
     		sizeBarColor,
     		statusColor,
     		reviewText,
@@ -6781,20 +7306,29 @@ var app = (function () {
     	});
 
     	$$self.$inject_state = $$props => {
-    		if ("patchSets" in $$props) $$invalidate(0, patchSets = $$props.patchSets);
+    		if ("refreshing" in $$props) $$invalidate(0, refreshing = $$props.refreshing);
+    		if ("updatedAt" in $$props) updatedAt = $$props.updatedAt;
+    		if ("updatedAtText" in $$props) $$invalidate(1, updatedAtText = $$props.updatedAtText);
+    		if ("patchSets" in $$props) $$invalidate(2, patchSets = $$props.patchSets);
+    		if ("lastFetch" in $$props) lastFetch = $$props.lastFetch;
     	};
 
     	if ($$props && "$$inject" in $$props) {
     		$$self.$inject_state($$props.$$inject);
     	}
 
-    	return [patchSets];
+    	return [refreshing, updatedAtText, patchSets];
     }
 
     class App extends SvelteComponentDev {
     	constructor(options) {
     		super(options);
-    		init(this, options, instance, create_fragment, safe_not_equal, { patchSets: 0 });
+
+    		init(this, options, instance, create_fragment, safe_not_equal, {
+    			refreshing: 0,
+    			updatedAtText: 1,
+    			patchSets: 2
+    		});
 
     		dispatch_dev("SvelteRegisterComponent", {
     			component: this,
@@ -6802,6 +7336,22 @@ var app = (function () {
     			options,
     			id: create_fragment.name
     		});
+    	}
+
+    	get refreshing() {
+    		throw new Error("<App>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set refreshing(value) {
+    		throw new Error("<App>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	get updatedAtText() {
+    		throw new Error("<App>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set updatedAtText(value) {
+    		throw new Error("<App>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
     	}
 
     	get patchSets() {
