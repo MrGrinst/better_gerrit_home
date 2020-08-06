@@ -55,7 +55,7 @@ class Server < Rubiclifier::Server
     if total >= 5000
       100
     else
-      ((Math.log(total / 2, 10) / Math.log(5000, 10)).round(2) * 100).to_i
+      ((Math.log([total, 2].max / 2, 10) / Math.log(5000, 10)).round(2) * 100).to_i
     end
   end
 
