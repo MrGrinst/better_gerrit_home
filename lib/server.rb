@@ -62,18 +62,18 @@ class Server < Rubiclifier::Server
   def reviews(json)
     {
       cr: review(json["labels"]["Code-Review"]),
-      pr: review(json["labels"]["Product-Review"]),
-      qa: review(json["labels"]["QA-Review"]),
+      pr: review(json["labels"]["Product-Review"] || {}, true),
+      qa: review(json["labels"]["QA-Review"], true),
       v: review(json["labels"]["Verified"]),
     }
   end
 
-  def review(json)
+  def review(json, only_goes_to_one = false)
     status = nil
     person = nil
     id = nil
     if json.key?("rejected")
-      status = "-2"
+      status = only_goes_to_one ? "-1" : "-2"
       person = json["rejected"]["name"]
       id = json["rejected"]["_account_id"]
     elsif json.key?("disliked")
@@ -85,7 +85,7 @@ class Server < Rubiclifier::Server
       person = json["recommended"]["name"]
       id = json["recommended"]["_account_id"]
     elsif json.key?("approved")
-      status = "+2"
+      status = only_goes_to_one ? "+1" : "+2"
       person = json["approved"]["name"]
       id = json["approved"]["_account_id"]
     end
