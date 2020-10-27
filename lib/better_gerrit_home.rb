@@ -1,5 +1,5 @@
 require "rubiclifier"
-require_relative "./api.rb"
+require_relative "./gerrit_api.rb"
 require_relative "./server.rb"
 
 class BetterGerritHome < Rubiclifier::BaseApplication
@@ -26,15 +26,23 @@ class BetterGerritHome < Rubiclifier::BaseApplication
   end
 
   def features
-    [Rubiclifier::Feature::BACKGROUND, Rubiclifier::Feature::DATABASE, Rubiclifier::Feature::NOTIFICATIONS, Rubiclifier::Feature::SERVER]
+    [
+      Rubiclifier::Feature::BACKGROUND,
+      Rubiclifier::Feature::DATABASE,
+      Rubiclifier::Feature::NOTIFICATIONS,
+      Rubiclifier::Feature::SERVER
+    ]
   end
 
   def settings
     @settings ||= [
-      Rubiclifier::Setting.new("base_api_url", "base URL", explanation: "e.g. https://gerrit.google.com"),
-      Rubiclifier::Setting.new("username", "account username"),
-      Rubiclifier::Setting.new("password", "account password", explanation: "input hidden", is_secret: true),
-      Rubiclifier::Setting.new("account_id", "account ID", explanation: -> {"check #{Api.base_api_url}/settings/"})
+      Rubiclifier::Setting.new("gerrit_base_api_url", "Gerrit base URL", explanation: "e.g. https://gerrit.google.com"),
+      Rubiclifier::Setting.new("gerrit_username", "Gerrit account username"),
+      Rubiclifier::Setting.new("gerrit_password", "Gerrit account password", explanation: "input hidden", is_secret: true),
+      Rubiclifier::Setting.new("gerrit_account_id", "account ID", explanation: -> {"check #{GerritApi.base_api_url}/settings/"}),
+      Rubiclifier::Setting.new("github_org", "Github org", explanation: "e.g. cool-org"),
+      Rubiclifier::Setting.new("github_username", "Github username"),
+      Rubiclifier::Setting.new("github_token", "Github personal token", explanation: "generate at https://github.com/settings/tokens", is_secret: true)
     ]
   end
 

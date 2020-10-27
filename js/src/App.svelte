@@ -70,7 +70,7 @@
       } else if (review.status === "+2") {
         return "✓";
       }
-    } else if (review.status !== null) {
+    } else if (review.status != null) {
       return review.status
     }
     return ""
@@ -114,9 +114,9 @@
     </tr>
     {#each [["mine", "My Changes"], ["others", "Others' Changes"], ["closed", "Closed"]] as section (section[0])}
       <tr><td colspan="10" class="tr-header td-first"><b>{section[1]}</b></td></tr>
-      {#each patchSets[section[0]] as p (p.id)}
+      {#each patchSets[section[0]] as p (p.id + JSON.stringify(p.reviews))}
         <tr>
-          <td class="td-first"><a href="{window.BASE_API_URL}/c/{p.project}/+/{p.id}">
+          <td class="td-first"><a href={p.id}>
             {#if p.changed_after_self_activity && section[0] !== "closed"}
               <b style="color: rgb(232, 234, 237);">{p.subject}</b>
             {:else}
@@ -128,15 +128,17 @@
           <td><a href="{window.BASE_API_URL}/q/project:{p.project}">{p.project}</td>
           <td>{moment.utc(p.updated_at).local().fromNow()}</td>
           <td class="size-bar-wrapper"><div class="size-bar-inner" style="width: {p.size}%;background-color: {sizeBarColor(p.size)};"></div></td>
-          <td class="border-left" style="background-color: {reviewColor(p.reviews.cr)};" title="{p.reviews.cr.person}">
+          <td class="border-left" colspan={p.github ? 3 : 1} style="background-color: {reviewColor(p.reviews.cr)};" title="{p.reviews.cr.person}">
             <div role="img" title="{p.reviews.cr.person}">{reviewText(p.reviews.cr)}</div>
           </td>
+          {#if !p.github}
           <td class="border-left" style="background-color: {reviewColor(p.reviews.pr)};" title="{p.reviews.pr.person}">
             <div role="img" title="{p.reviews.pr.person}">{reviewText(p.reviews.pr)}</div>
           </td>
           <td class="border-left" style="background-color: {reviewColor(p.reviews.qa)};" title="{p.reviews.qa.person}">
             <div role="img" title="{p.reviews.qa.person}">{reviewText(p.reviews.qa)}</div>
           </td>
+          {/if}
           <td class="border-left" style="background-color: {reviewColor(p.reviews.v)};" title="{p.reviews.v.person}">
             <div role="img">{reviewText(p.reviews.v, true)}</div>
           </td>

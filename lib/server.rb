@@ -1,6 +1,8 @@
 require "rubiclifier"
-require_relative "./api.rb"
+require_relative "./gerrit_api.rb"
+require_relative "./github_api.rb"
 require "byebug"
+require "time"
 
 class Server < Rubiclifier::Server
   def self.hydrate
@@ -9,33 +11,87 @@ class Server < Rubiclifier::Server
   end
 
   get '/base_api_url' do
-    Api.base_api_url
+    GerritApi.base_api_url
   end
 
   get '/changes' do
-    my_wips, my_changes, others, closed = Api.all_code_changes
+    my_gerrit_wips = nil
+    my_gerrit_changes = nil
+    gerrit_others = nil
+    gerrit_closed = nil
+    all_github_prs = nil
+    threads = []
+    threads << Thread.new do
+      my_gerrit_wips, my_gerrit_changes, gerrit_others, gerrit_closed = GerritApi.all_code_changes
+    end
+    threads << Thread.new do
+      all_github_prs = GithubApi.all_code_changes.select { |pr| !!pr["pull_request"] }.map { |j| parse_raw_github_change(j) }
+    end
+    threads.each { |thr| thr.join }
+    my_github_prs, github_others, github_closed = split_github_prs(all_github_prs)
+    extra_info_threads = (my_github_prs + github_others).map do |pr|
+      Thread.new do
+        GithubApi.inject_info(pr, ->(total) { size(total) } )
+        is_new = GithubApi.inject_new_test_status(pr)
+        GithubApi.inject_old_test_status(pr) unless is_new
+        GithubApi.inject_reviews(pr)
+      end
+    end
+    extra_info_threads.each { |thr| thr.join }
     {
-      mine: (my_wips + my_changes).map { |j| parse_raw_change(j) },
-      others: others.map { |j| parse_raw_change(j) },
-      closed: closed.map { |j| parse_raw_change(j) }
+      mine: sort_by_updated((my_gerrit_wips + my_gerrit_changes)
+              .map { |j| parse_raw_gerrit_change(j) } + my_github_prs),
+      others: sort_by_updated(gerrit_others.map { |j| parse_raw_gerrit_change(j) } + github_others),
+      closed: sort_by_updated(gerrit_closed.map { |j| parse_raw_gerrit_change(j) } + github_closed)
     }.to_json
   end
 
   private
 
-  def parse_raw_change(json)
+  def parse_raw_gerrit_change(json)
+    total = json["insertions"] + json["deletions"]
     {
-      id: json["_number"].to_s,
+      id: "#{GerritApi.base_api_url}/c/#{json["project"]}/+/#{json["_number"]}",
       owner_name: json["owner"]["name"],
       owner_email: json["owner"]["email"],
       project: json["project"],
       subject: json["subject"],
       updated_at: json["updated"],
       status: patch_status(json),
-      size: size(json),
+      size: size(total),
       reviews: reviews(json),
-      changed_after_self_activity: changed_after_self_activity(json)
+      changed_after_self_activity: changed_after_self_activity(json),
+      github: false
     }
+  end
+
+  def parse_raw_github_change(json)
+    {
+      id: json["pull_request"]["html_url"],
+      id_frd: json["pull_request"]["url"].match(/\d+$/)[0],
+      owner_name: json["user"]["login"],
+      owner_email: nil,
+      project: json["repository"]["name"],
+      subject: json["title"],
+      updated_at: json["updated_at"],
+      status: json["state"] == "closed" ? "Merged" : "-",
+      size: 0,
+      reviews: { cr: {}, qa: {}, pr: {}, v: {} },
+      changed_after_self_activity: nil,
+      commit_id: nil,
+      github: true
+    }
+  end
+
+  def split_github_prs(all_prs)
+    mine = all_prs.select {   |p| p[:owner_name] == GithubApi.username && p[:status] == "-" }
+    others = all_prs.select { |p| p[:owner_name] != GithubApi.username && p[:status] == "-" }
+    closed = all_prs.select { |p| p[:status] == "Merged" }
+    [mine, others, closed]
+  end
+
+  def sort_by_updated(list)
+    list.sort { |a, b| DateTime.parse(b[:updated_at]) <=> DateTime.parse(a[:updated_at]) }
   end
 
   def patch_status(json)
@@ -50,8 +106,7 @@ class Server < Rubiclifier::Server
     end
   end
 
-  def size(json)
-    total = json["insertions"] + json["deletions"]
+  def size(total)
     if total >= 5000
       100
     else
@@ -92,15 +147,15 @@ class Server < Rubiclifier::Server
     {
       status: status,
       person: person,
-      is_self: id&.to_s == Api.account_id,
+      is_self: id&.to_s == GerritApi.account_id,
       is_bot: !!person&.match(/(Service Cloud Jenkins|Gergich \(Bot\))/)
     }
   end
 
   def changed_after_self_activity(json)
     messages_without_bots = json["messages"].select { |m| !m["author"]["name"].match(/(Service Cloud Jenkins|Gergich \(Bot\))/) }
-    self_has_activity = messages_without_bots.any? { |m| m["author"]["_account_id"].to_s == Api.account_id }
-    last_activity_is_self = messages_without_bots.last["author"]["_account_id"].to_s == Api.account_id
+    self_has_activity = messages_without_bots.any? { |m| m["author"]["_account_id"].to_s == GerritApi.account_id }
+    last_activity_is_self = messages_without_bots.last["author"]["_account_id"].to_s == GerritApi.account_id
     self_has_activity && !last_activity_is_self
   end
 end

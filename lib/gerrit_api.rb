@@ -2,11 +2,11 @@ require "rubiclifier"
 
 class HTTParty::Parser
   def json
-    JSON.parse(body.gsub(")]}'", ""))
+    JSON.parse(body.sub(/\)\]\}'/, ""))
   end
 end
 
-class Api < Rubiclifier::BaseApi
+class GerritApi < Rubiclifier::BaseApi
   def self.login_and_get_api_token
     res = post("/login/", {
       body: "username=#{username}&password=#{URI.escape(password)}&rememberme=1",
@@ -21,7 +21,7 @@ class Api < Rubiclifier::BaseApi
 
   def self.invalid_credentials_error
     Rubiclifier::Notification.new(
-      "Incorrect Credentials",
+      "Incorrect Gerrit Username/Password",
       "Trying running `better_gerrit_home --setup` again."
     ).send
     sleep(120)
@@ -39,22 +39,22 @@ class Api < Rubiclifier::BaseApi
   end
 
   def self.api_token_db_key
-    "api_token"
+    "gerrit_api_token"
   end
 
   def self.base_api_url_db_key
-    "base_api_url"
+    "gerrit_base_api_url"
   end
 
   def self.username
-    @username ||= Rubiclifier::DB.get_setting("username")
+    @username ||= Rubiclifier::DB.get_setting("gerrit_username")
   end
 
   def self.password
-    @password ||= Rubiclifier::DB.get_setting("password")
+    @password ||= Rubiclifier::DB.get_setting("gerrit_password")
   end
 
   def self.account_id
-    @account_id ||= Rubiclifier::DB.get_setting("account_id")
+    @account_id ||= Rubiclifier::DB.get_setting("gerrit_account_id")
   end
 end
