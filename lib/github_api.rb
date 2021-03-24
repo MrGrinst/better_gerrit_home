@@ -25,13 +25,13 @@ class GithubApi < Rubiclifier::BaseApi
     attrs = wrap_with_authentication do
       get("/repos/#{org}/#{pr[:project]}/commits/#{pr[:commit_id]}/check-runs", { headers: headers })
     end.parsed_response
-    last_run = attrs["check_runs"].last
-    if last_run && last_run["conclusion"]
-      if last_run["conclusion"] == "success"
+    check_runs = attrs["check_runs"]
+    if check_runs.all? { |c| c["status"] == "completed" }
+      if check_runs.all? { |c| c["conclusion"] == "skipped" || c["conclusion"] == "success" }
         pr[:reviews][:v][:status] = "+2"
         pr[:reviews][:v][:person] = "Github Actions"
         pr[:reviews][:v][:is_bot] = true
-      elsif last_run["conclusion"] == "failure"
+      else
         pr[:reviews][:v][:status] = "-2"
         pr[:reviews][:v][:person] = "Github Actions"
         pr[:reviews][:v][:is_bot] = true

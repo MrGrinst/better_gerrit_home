@@ -127,19 +127,19 @@ class Server < Rubiclifier::Server
     status = nil
     person = nil
     id = nil
-    if json.key?("rejected")
+    if json && json.key?("rejected")
       status = only_goes_to_one ? "-1" : "-2"
       person = json["rejected"]["name"]
       id = json["rejected"]["_account_id"]
-    elsif json.key?("disliked")
+    elsif json && json.key?("disliked")
       status = "-1"
       person = json["disliked"]["name"]
       id = json["disliked"]["_account_id"]
-    elsif json.key?("recommended")
+    elsif json && json.key?("recommended")
       status = "+1"
       person = json["recommended"]["name"]
       id = json["recommended"]["_account_id"]
-    elsif json.key?("approved")
+    elsif json && json.key?("approved")
       status = only_goes_to_one ? "+1" : "+2"
       person = json["approved"]["name"]
       id = json["approved"]["_account_id"]
