@@ -17,6 +17,6 @@
   },
   "dependencies": {
     "ifvisible.js": "^1.0.6",
-    "moment": "^2.27.0"
+    "moment": "^2.29.2"
   }
 }
